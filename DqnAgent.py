@@ -23,11 +23,12 @@ class Experience:
         else:
             raise StopIteration
 
+
 class DqnAgent:
     def __init__(self,
                  num_observations,  # size of the state |s|
                  num_actions,  # number of actions in the environment
-                 alpha=1e-3,   # learning rate
+                 alpha=1.,   # learning rate
                  epsilon=0.1,  # random move probability
                  gamma=0.99,   # discount factor
                  qnet_layer_params=(128, 64),  # neuron counts for the fully-connected layers of the Q Network
@@ -74,10 +75,13 @@ class DqnAgent:
         a = int(a)
         action_len = int(action_len)
         # define loss as a one-hot vector for the action we took.
+        loss_val = (r + (gamma * max_q)) - y_pred
         loss = tf.one_hot(a, action_len)
-        loss *= r + gamma * max_q
-        loss -= y_pred
-        loss *= alpha
+        loss *= loss_val
+
+        loss = 0.5 * loss**2
+        # Huber
+        # loss = 0.5 * loss**2
 
         return loss
 
@@ -98,15 +102,17 @@ class DqnAgent:
         self._epsilon = new_value
 
 
-def run_dqn_on_env(env: gym.Env, num_episodes=150):
+def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
     assert type(env.action_space) == Discrete, "Can only use this DQN Agent on discrete state spaces for now."
 
     # reset the environment and get the initial state s0
     state = env.reset()
 
     # create our DQN agent, passing it information about the environment's observation/action spec.
-    # don't worry about any potential warnings in the next line, n must exist if the action space is discrete.
     dqn_agent = DqnAgent(len(state), env.action_space.n)
+
+    if render:
+        print("[WARN]: Rendering will slow down training. Are you sure you want to be rendering?")
 
     # while the episode isn't over, generate a new action on the state, perform that action, then train.
     returns = np.zeros(num_episodes)
@@ -122,18 +128,23 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150):
             new_state, reward, done, info = env.step(action)
 
             # render the environment
-            env.render('human')
+            if render:
+                env.render('human')
 
             # train on the experience
-            experience = Experience(state, action, reward, new_state)
-            loss = dqn_agent.train(experience)
+            if not done:
+                experience = Experience(state, action, reward, new_state)
+                loss = dqn_agent.train(experience)
+                if verbose:
+                    print(loss)
+
             ep_return += reward
 
-            # print(loss)
             state = new_state
 
         # episode terminated by this point
         returns[ep] = ep_return
+        print(ep_return)
 
     plt.plot(returns)
     plt.show()
@@ -146,11 +157,11 @@ if __name__ == '__main__':
     example_state = (0., 0., 1.)
     example_action_set = list(range(5))
 
-    dude = DqnAgent(num_observations=len(example_state), num_actions=len(example_action_set), epsilon=1., rng_seed=150)
-    print(f"Sampling a random action: {dude.action(example_state)}")
+    agent = DqnAgent(num_observations=len(example_state), num_actions=len(example_action_set), epsilon=1., rng_seed=150)
+    print(f"Sampling a random action: {agent.action(example_state)}")
 
-    dude.set_epsilon(0.)
-    print(f"Sampling a greedy action: {dude.action(example_state)}")
+    agent.set_epsilon(0.)
+    print(f"Sampling a greedy action: {agent.action(example_state)}")
 
     test_env = gym.make('CartPole-v1')
-    run_dqn_on_env(test_env)
+    run_dqn_on_env(test_env, num_episodes=50000, render=False)
