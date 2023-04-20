@@ -2,26 +2,10 @@ import gym
 import tensorflow as tf
 import numpy as np
 from gym.spaces import Discrete
+from keras.losses import Huber
 from keras.optimizers.legacy.adam import Adam
 from matplotlib import pyplot as plt
-
-
-class Experience:
-    def __init__(self, s, a, r, s_p):
-        self.state = s
-        self.action = a
-        self.reward = r
-        self.next_state = s_p
-
-        self._as_list = [s, a, r, s_p]
-        self._list_iter_counter = 0
-
-    def __iter__(self):
-        self._list_iter_counter += 1
-        if self._list_iter_counter < 4:
-            yield self._as_list[self._list_iter_counter - 1]
-        else:
-            raise StopIteration
+from UniformReplayBuffer import UniformReplayBuffer, Experience
 
 
 class DqnAgent:
@@ -32,7 +16,8 @@ class DqnAgent:
                  epsilon=0.1,  # random move probability
                  gamma=0.99,   # discount factor
                  qnet_layer_params=(128, 64),  # neuron counts for the fully-connected layers of the Q Network
-                 rng_seed: int = None  # seed to RNG (optional, for debugging really)
+                 rng_seed: int = None,  # seed to RNG (optional, for debugging really)
+                 debug: bool = False    # enable debugging mode, useful for stack traces in tensorflow functions
                  ):
         # public fields
 
@@ -42,6 +27,7 @@ class DqnAgent:
         self._epsilon = np.float32(epsilon)
         self._gamma = np.float32(gamma)
         self._rng = np.random.RandomState(seed=rng_seed)
+        self._debug = debug
 
         self._qnet = tf.keras.models.Sequential()
         self._qnet.add(tf.keras.layers.InputLayer(input_shape=(num_observations,)))
@@ -49,7 +35,7 @@ class DqnAgent:
             self._qnet.add(tf.keras.layers.Dense(neuron_count, 'relu'))
         self._qnet.add(tf.keras.layers.Dense(num_actions, 'linear'))
 
-        self._qnet.compile(Adam(), loss=self.td_loss, run_eagerly=True)
+        self._qnet.compile(Adam(), loss=Huber(), run_eagerly=self._debug)
 
     def action(self, state):
         # rolled less than epsilon. return random action.
@@ -86,30 +72,59 @@ class DqnAgent:
         return loss
 
     def train(self, experience: Experience):
-        s_prime = tf.expand_dims(experience.next_state, axis=0)
-        a_prime = self._qnet(s_prime)
-        max_q_for_a_prime = tf.squeeze(tf.reduce_max(a_prime)).numpy()
-        ins = tf.expand_dims(experience.state, axis=0)
-        info = tf.convert_to_tensor((np.float32(experience.action), np.float32(experience.reward),
-                                    max_q_for_a_prime, np.float32(len(self._action_set)),
-                                    self._gamma, self._alpha))
-        info = tf.reshape(info, (1, -1))
+        raise NotImplementedError
 
-        loss = self._qnet.train_on_batch(ins, y=info)
-        return loss
+        #
+        # s_prime = tf.expand_dims(experience.next_state, axis=0)
+        # a_prime = self._qnet(s_prime)
+        # max_q_for_a_prime = tf.squeeze(tf.reduce_max(a_prime)).numpy()
+        # ins = tf.expand_dims(experience.state, axis=0)
+        # info = tf.convert_to_tensor((np.float32(experience.action), np.float32(experience.reward),
+        #                             max_q_for_a_prime, np.float32(len(self._action_set)),
+        #                             self._gamma, self._alpha))
+        # info = tf.reshape(info, (1, -1))
+        #
+        # loss = self._qnet.train_on_batch(ins, y=info)
+        # return loss
 
-    def set_epsilon(self, new_value):
+    def train_on_batch(self, batch: [Experience]):
+        batch_size = len(batch)
+
+        states = list(map(lambda x: x.state, batch))
+        rewards = list(map(lambda x: x.reward, batch))
+        s_primes = list(map(lambda x: x.next_state, batch))
+
+        states = np.array(states, dtype=np.float32)
+        rewards = np.array(rewards)
+        s_primes = np.array(s_primes)
+
+        a_primes = self._qnet(tf.convert_to_tensor(s_primes))
+        max_q_prime = np.max(a_primes, axis=1)
+
+        y_true = np.zeros(batch_size, dtype=np.float32)
+        for i in range(batch_size):
+            if batch[i].is_terminal:
+                y_true[i] = np.float32(rewards[i])
+            else:
+                y_true[i] = np.float32(rewards[i] + self._gamma * max_q_prime[i])
+
+        y_true = tf.convert_to_tensor(y_true, dtype=tf.float32)
+        history = self._qnet.fit(x=states, y=y_true, shuffle=False, verbose=False)
+        return history.history['loss']
+
+    def set_epsilon(self, new_value) -> None:
         self._epsilon = new_value
 
 
 def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
-    assert type(env.action_space) == Discrete, "Can only use this DQN Agent on discrete state spaces for now."
+    assert type(env.action_space) == Discrete, "Can only use this DQN Agent on discrete action spaces for now."
 
     # reset the environment and get the initial state s0
     state = env.reset()
 
     # create our DQN agent, passing it information about the environment's observation/action spec.
     dqn_agent = DqnAgent(len(state), env.action_space.n)
+    replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=32)
 
     if render:
         print("[WARN]: Rendering will slow down training. Are you sure you want to be rendering?")
@@ -127,16 +142,22 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
             # run the action on the environment and get the new info
             new_state, reward, done, info = env.step(action)
 
+            # add the experience to our replay buffer
+            experience = Experience(state, done, action, reward, new_state)
+            replay_buffer.add_experience(experience)
+
             # render the environment
             if render:
                 env.render('human')
 
             # train on the experience
             if not done:
-                experience = Experience(state, action, reward, new_state)
-                loss = dqn_agent.train(experience)
-                if verbose:
-                    print(loss)
+                if replay_buffer.mb_size < replay_buffer.num_experiences():
+                    training_batch = replay_buffer.sample_minibatch()
+                    loss = dqn_agent.train_on_batch(training_batch)
+
+                    if verbose:
+                        print(loss)
 
             ep_return += reward
 
@@ -149,6 +170,8 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
     plt.plot(returns)
     plt.show()
     print(returns)
+
+    return returns
 
 
 if __name__ == '__main__':
@@ -164,4 +187,4 @@ if __name__ == '__main__':
     print(f"Sampling a greedy action: {agent.action(example_state)}")
 
     test_env = gym.make('CartPole-v1')
-    run_dqn_on_env(test_env, num_episodes=50000, render=False)
+    run_dqn_on_env(test_env, num_episodes=100, render=True)
