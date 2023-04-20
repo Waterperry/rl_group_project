@@ -59,10 +59,6 @@ class DqnAgent:
         # choose a greedy action
         # generate action q values by calling the network on the current state.
         # qnet may expect a batched input, in which case we need to expand dims.
-
-        # the next line is a workaround because for some reason, CarRacing's observation is a tuple :(
-        if type(state) == tuple and len(state) == 2:
-            state = state[0]
         action_q_values = self._qnet(tf.expand_dims(state, axis=0))
         action_q_values = tf.squeeze(action_q_values)
 
@@ -94,7 +90,7 @@ class DqnAgent:
 
         # create a mask to apply to the max_q_prime array, because we don't want to consider the max_q value of the
         #   next state if our state s is terminal
-        mask = np.array(list(map(lambda x: x.is_terminal(), batch)), dtype=np.float32)
+        mask = np.array(list(map(lambda x: not x.is_terminal(), batch)), dtype=np.float32)
         y_true = rewards + mask * self._gamma * max_q_prime
 
         # finally, convert the above array to a tensor, and train our q_network on it
@@ -116,6 +112,72 @@ class DqnAgent:
         for param in params:
             conf.write(f"{param}: {params[param]}\n")
         self._qnet.save(f"./saved_configs/dqn_qnet_{nonce}.h5")
+
+
+def cartpole_test(num_episodes=150, render=True, verbose=False):
+    env = gym.make('CartPole-v1', render_mode='human')
+
+    # reset the environment and get the initial state s0
+    state = env.reset()
+    if len(state) == 2 and type(state) == tuple:
+        state = state[0]
+
+    # create our DQN agent, passing it information about the environment's observation/action spec.
+    dqn_agent = DqnAgent(state.shape, env.action_space.n, qnet_conv_layer_params=None, epsilon=1e-3, alpha=5e-5)
+
+    replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=128)
+
+    if render:
+        print("[WARN]: Rendering will slow down training. Are you sure you want to be rendering?")
+
+    # while the episode isn't over, generate a new action on the state, perform that action, then train.
+    returns = np.zeros(num_episodes)
+    for ep in range(num_episodes):
+        ep_return = 0.
+        state = env.reset()
+        done = False
+        while not done:
+            # state is a tuple in CarRacing for some reason. just get the pixel-based observation.
+            if len(state) == 2 and type(state) == tuple:
+                state = state[0]
+                # call the action wrapper to get an e-greedy action
+            action = dqn_agent.action(state)
+
+            # run the action on the environment and get the new info
+            new_state, reward, done, truncated, info = env.step(action)
+
+            # state is a tuple in CarRacing for some reason. just get the pixel-based observation.
+            if len(state) == 2 and type(state) == tuple:
+                new_state = new_state[0]
+            # add the experience to our replay buffer
+            experience = Experience(state, done, action, reward, new_state)
+            replay_buffer.add_experience(experience)
+
+            # render the environment
+            if render:
+                env.render()
+
+            # train on the experience
+            if not done:
+                if replay_buffer.mb_size < replay_buffer.num_experiences():
+                    training_batch = replay_buffer.sample_minibatch()
+                    loss = dqn_agent.train_on_batch(training_batch)
+
+                    if verbose:
+                        print(loss)
+
+            ep_return += reward
+
+            state = new_state
+
+        # episode terminated by this point
+        returns[ep] = ep_return
+        print(f"Episode {ep} over. Total return: {ep_return}")
+
+    plt.plot(returns)
+    _ = plt.title("Agent total returns per episode (Training)"), plt.xlabel("Episode"), plt.ylabel("Return")
+    plt.show()
+    return dqn_agent, returns
 
 
 def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
@@ -236,7 +298,9 @@ def main():
     print(f"Sampling a greedy action: {agent.action(example_state)}")
 
     # train an agent on a given environment
-    test_env = gym.envs.make('CarRacing-v2', continuous=False, render_mode='human')
+    test_env = gym.envs.make('RacingCar-v1',
+                             continuous=False, render_mode='human'
+                             )
 
     trained_agent, returns = run_dqn_on_env(test_env, num_episodes=1000, render=True)
 
@@ -250,4 +314,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    cartpole_test(num_episodes=1000, render=False)
