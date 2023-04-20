@@ -1,3 +1,5 @@
+import os
+
 import gym
 import tensorflow as tf
 import numpy as np
@@ -91,11 +93,13 @@ class DqnAgent:
 
     def save_policy(self):
         nonce = np.random.randint(0, 1e6)
-        conf = open(f"./dqn_conf_{nonce}.txt", "w+")
+        if not os.path.isdir('saved_configs'):
+            os.makedirs('saved_configs')
+        conf = open(f"./saved_configs/dqn_conf_{nonce}.txt", "w+")
         params = vars(self)
         for param in params:
             conf.write(f"{param}: {params[param]}\n")
-        self._qnet.save(f"./dqn_qnet_{nonce}.h5")
+        self._qnet.save(f"./saved_configs/dqn_qnet_{nonce}.h5")
 
 
 def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
@@ -189,7 +193,7 @@ def evaluate_agent_on_env(agent: DqnAgent, env: gym.Env, num_eval_episodes=100, 
         eval_returns[eval_ep] = ep_return
         print(f"Evaluation episode {eval_ep} over. Total return: {ep_return}")
 
-        return eval_returns
+    return eval_returns
 
 
 def main():
@@ -206,13 +210,14 @@ def main():
 
     # train an agent on a given environment
     test_env = gym.make('CartPole-v1')
-    trained_agent, returns = run_dqn_on_env(test_env, num_episodes=1000, render=True)
+    trained_agent, returns = run_dqn_on_env(test_env, num_episodes=100, render=True)
 
     # evaluate the agent on the same environment
-    eval_returns = evaluate_agent_on_env(trained_agent, test_env, num_eval_episodes=100)
+    eval_returns = evaluate_agent_on_env(trained_agent, test_env, num_eval_episodes=10)
     plt.plot(eval_returns)
     plt.title("Returns on evaluation environment"), plt.xlabel("Eval. episode"), plt.ylabel("Returns")
 
+    trained_agent.save_policy()
 
 if __name__ == '__main__':
     main()
