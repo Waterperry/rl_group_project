@@ -62,7 +62,7 @@ class DqnAgent:
         action_q_values = self._qnet(tf.expand_dims(state, axis=0))
         action_q_values = tf.squeeze(action_q_values)
 
-        return tf.squeeze(tf.argmax(action_q_values)).numpy()
+        return tf.argmax(action_q_values).numpy()
 
     def train(self, experience: Experience):
         return self.train_on_batch([experience])
@@ -123,7 +123,8 @@ def cartpole_test(num_episodes=150, render=True, verbose=False):
         state = state[0]
 
     # create our DQN agent, passing it information about the environment's observation/action spec.
-    dqn_agent = DqnAgent(state.shape, env.action_space.n, qnet_conv_layer_params=None, epsilon=1e-3, alpha=5e-5)
+    dqn_agent = DqnAgent(state.shape, env.action_space.n,
+                         qnet_conv_layer_params=None, epsilon=1e-3, alpha=1e-7, gamma=0.9)
 
     replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=128)
 
@@ -188,7 +189,7 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
     if len(state) == 2 and type(state) == tuple:
         state = state[0]
     # create our DQN agent, passing it information about the environment's observation/action spec.
-    dqn_agent = DqnAgent(state.shape, env.action_space.n)
+    dqn_agent = DqnAgent(state.shape, env.action_space.n, qnet_fc_layer_params=(256, 256, 128), epsilon=0.2, gamma=0.95)
 
     replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=32)
 
@@ -298,7 +299,7 @@ def main():
     print(f"Sampling a greedy action: {agent.action(example_state)}")
 
     # train an agent on a given environment
-    test_env = gym.envs.make('RacingCar-v1',
+    test_env = gym.envs.make('CarRacing-v2',
                              continuous=False, render_mode='human'
                              )
 
@@ -314,5 +315,5 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    cartpole_test(num_episodes=1000, render=False)
+    main()
+    # cartpole_test(num_episodes=1000, render=False)
