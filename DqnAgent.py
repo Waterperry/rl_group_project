@@ -50,31 +50,8 @@ class DqnAgent:
 
         return tf.squeeze(tf.argmax(action_q_values)).numpy()
 
-    @staticmethod
-    def td_loss(y_true: tf.RaggedTensor, y_pred: tf.Tensor):
-        # y_true contains the necessary information to compute TD-Loss.
-        # i.e. it's an Experience object and max_q for a_prime
-        # assume we only have one sample??
-        info = y_true[0]
-        a, r, max_q, action_len, gamma, alpha = info
-
-        a = int(a)
-        action_len = int(action_len)
-        # define loss as a one-hot vector for the action we took.
-        loss_val = (r + (gamma * max_q)) - y_pred
-        loss = tf.one_hot(a, action_len)
-        loss *= loss_val
-
-        loss = 0.5 * loss**2
-        # Huber
-        # loss = 0.5 * loss**2
-
-        return loss
-
     def train(self, experience: Experience):
-        raise NotImplementedError
-
-        #
+        return self.train_on_batch([experience])
         # s_prime = tf.expand_dims(experience.next_state, axis=0)
         # a_prime = self._qnet(s_prime)
         # max_q_for_a_prime = tf.squeeze(tf.reduce_max(a_prime)).numpy()
@@ -88,30 +65,37 @@ class DqnAgent:
         # return loss
 
     def train_on_batch(self, batch: [Experience]):
+        # unpack the experience batch into arrays of state, reward, etc.
         states = np.array(list(map(lambda x: x.state, batch)))
         rewards = np.array(list(map(lambda x: x.reward, batch)))
         s_primes = np.array(list(map(lambda x: x.next_state, batch)))
 
+        # convert s_primes to a tensor, run it through our q_network, and get the maximum action value for each s'
         a_primes = self._qnet(tf.convert_to_tensor(s_primes))
         max_q_prime = np.max(a_primes, axis=1)
 
+        # create a mask to apply to the max_q_prime array, because we don't want to consider the max_q value of the
+        #   next state if our state s is terminal
         mask = np.array(list(map(lambda x: x.is_terminal(), batch)), dtype=np.float32)
         y_true = rewards + mask * self._gamma * max_q_prime
 
-        # for i in range(batch_size):
-        #     if batch[i].is_terminal:
-        #         y_true[i] = np.float32(rewards[i])
-        #     else:
-        #         y_true[i] = np.float32(rewards[i] + self._gamma * max_q_prime[i])
-        #
-        # np.allclose(vec_y_true, y_true)
-
+        # finally, convert the above array to a tensor, and train our q_network on it
         y_true = tf.convert_to_tensor(y_true, dtype=tf.float32)
         history = self._qnet.fit(x=states, y=y_true, shuffle=False, verbose=False)
         return history.history['loss']
 
     def set_epsilon(self, new_value) -> None:
-        self._epsilon = new_value
+        # just good practice to have a setter rather than accessing it raw, because we are using conversions as
+        #   type checking is pretty important if we are going to try and run our code in TF graph mode.
+        self._epsilon = np.float32(new_value)
+
+    def save_policy(self):
+        nonce = np.random.randint(0, 1e6)
+        conf = open(f"./dqn_conf_{nonce}.txt", "w+")
+        params = vars(self)
+        for param in params:
+            conf.write(f"{param}: {params[param]}\n")
+        self._qnet.save(f"./dqn_qnet_{nonce}.h5")
 
 
 def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
@@ -121,7 +105,8 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
     state = env.reset()
 
     # create our DQN agent, passing it information about the environment's observation/action spec.
-    dqn_agent = DqnAgent(len(state), env.action_space.n, alpha=1e-4)
+    dqn_agent = DqnAgent(len(state), env.action_space.n, alpha=1e-4, epsilon=1e-4)
+
     replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=32)
 
     if render:
@@ -171,10 +156,43 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
     plt.show()
 
     # print(returns)
-    return returns
+    return dqn_agent, returns
 
 
-if __name__ == '__main__':
+def evaluate_agent_on_env(agent: DqnAgent, env: gym.Env, num_eval_episodes=100, render=True):
+    # set the agent's random move probability to 0, so we can evaluate its policy exclusively.
+    # agent MUST expose a set_epsilon method to control randomness, hence we type-hint that it is a DqnAgent
+    agent.set_epsilon(0.0)
+
+    eval_returns = np.zeros(num_eval_episodes)
+    for eval_ep in range(num_eval_episodes):
+        # reset our environment for this run
+        state = env.reset()
+        done = False
+        ep_return = 0.
+
+        while not done:
+            # call the action wrapper to get an e-greedy action
+            action = agent.action(state)
+
+            # run the action on the environment and get the new info
+            new_state, reward, done, info = env.step(action)
+
+            # render the environment
+            if render:
+                env.render('human')
+
+            ep_return += reward
+            state = new_state
+
+        # episode terminated by this point
+        eval_returns[eval_ep] = ep_return
+        print(f"Evaluation episode {eval_ep} over. Total return: {ep_return}")
+
+        return eval_returns
+
+
+def main():
     # a really simple example observation and action space. Importantly, num_observations is the size of a state
     #    and num_actions is the number of actions available in the environment.
     example_state = (0., 0., 1.)
@@ -186,5 +204,15 @@ if __name__ == '__main__':
     agent.set_epsilon(0.)
     print(f"Sampling a greedy action: {agent.action(example_state)}")
 
+    # train an agent on a given environment
     test_env = gym.make('CartPole-v1')
-    run_dqn_on_env(test_env, num_episodes=500, render=True)
+    trained_agent, returns = run_dqn_on_env(test_env, num_episodes=1000, render=True)
+
+    # evaluate the agent on the same environment
+    eval_returns = evaluate_agent_on_env(trained_agent, test_env, num_eval_episodes=100)
+    plt.plot(eval_returns)
+    plt.title("Returns on evaluation environment"), plt.xlabel("Eval. episode"), plt.ylabel("Returns")
+
+
+if __name__ == '__main__':
+    main()
