@@ -12,7 +12,7 @@ class DqnAgent:
     def __init__(self,
                  num_observations,  # size of the state |s|
                  num_actions,  # number of actions in the environment
-                 alpha=1.,   # learning rate
+                 alpha=1e-3,   # AdaM learning rate
                  epsilon=0.1,  # random move probability
                  gamma=0.99,   # discount factor
                  qnet_layer_params=(128, 64),  # neuron counts for the fully-connected layers of the Q Network
@@ -35,7 +35,7 @@ class DqnAgent:
             self._qnet.add(tf.keras.layers.Dense(neuron_count, 'relu'))
         self._qnet.add(tf.keras.layers.Dense(num_actions, 'linear'))
 
-        self._qnet.compile(Adam(), loss=Huber(), run_eagerly=self._debug)
+        self._qnet.compile(Adam(learning_rate=alpha), loss=Huber(), run_eagerly=self._debug)
 
     def action(self, state):
         # rolled less than epsilon. return random action.
@@ -88,25 +88,23 @@ class DqnAgent:
         # return loss
 
     def train_on_batch(self, batch: [Experience]):
-        batch_size = len(batch)
-
-        states = list(map(lambda x: x.state, batch))
-        rewards = list(map(lambda x: x.reward, batch))
-        s_primes = list(map(lambda x: x.next_state, batch))
-
-        states = np.array(states, dtype=np.float32)
-        rewards = np.array(rewards)
-        s_primes = np.array(s_primes)
+        states = np.array(list(map(lambda x: x.state, batch)))
+        rewards = np.array(list(map(lambda x: x.reward, batch)))
+        s_primes = np.array(list(map(lambda x: x.next_state, batch)))
 
         a_primes = self._qnet(tf.convert_to_tensor(s_primes))
         max_q_prime = np.max(a_primes, axis=1)
 
-        y_true = np.zeros(batch_size, dtype=np.float32)
-        for i in range(batch_size):
-            if batch[i].is_terminal:
-                y_true[i] = np.float32(rewards[i])
-            else:
-                y_true[i] = np.float32(rewards[i] + self._gamma * max_q_prime[i])
+        mask = np.array(list(map(lambda x: x.is_terminal(), batch)), dtype=np.float32)
+        y_true = rewards + mask * self._gamma * max_q_prime
+
+        # for i in range(batch_size):
+        #     if batch[i].is_terminal:
+        #         y_true[i] = np.float32(rewards[i])
+        #     else:
+        #         y_true[i] = np.float32(rewards[i] + self._gamma * max_q_prime[i])
+        #
+        # np.allclose(vec_y_true, y_true)
 
         y_true = tf.convert_to_tensor(y_true, dtype=tf.float32)
         history = self._qnet.fit(x=states, y=y_true, shuffle=False, verbose=False)
@@ -123,7 +121,7 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
     state = env.reset()
 
     # create our DQN agent, passing it information about the environment's observation/action spec.
-    dqn_agent = DqnAgent(len(state), env.action_space.n)
+    dqn_agent = DqnAgent(len(state), env.action_space.n, alpha=1e-4)
     replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=32)
 
     if render:
@@ -165,12 +163,14 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
 
         # episode terminated by this point
         returns[ep] = ep_return
-        print(ep_return)
+        print(f"Episode {ep} over. Total return: {ep_return}")
 
     plt.plot(returns)
-    plt.show()
-    print(returns)
+    _ = plt.title("Agent total returns per episode"), plt.xlabel("Episode"), plt.ylabel("Return")
 
+    plt.show()
+
+    # print(returns)
     return returns
 
 
@@ -187,4 +187,4 @@ if __name__ == '__main__':
     print(f"Sampling a greedy action: {agent.action(example_state)}")
 
     test_env = gym.make('CartPole-v1')
-    run_dqn_on_env(test_env, num_episodes=100, render=True)
+    run_dqn_on_env(test_env, num_episodes=500, render=True)
