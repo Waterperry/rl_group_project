@@ -41,6 +41,8 @@ class UniformReplayBuffer:
         if len(self.buf) >= self.max_len:
             del_idx = np.random.randint(0, self.max_len)
             self.buf[del_idx] = experience
+        else:
+            self.buf.append(experience)
 
     def num_experiences(self):
         return len(self.buf)
