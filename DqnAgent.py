@@ -39,6 +39,7 @@ class DqnAgent:
             for filter_count in qnet_conv_layer_params:
                 self._qnet.add(tf.keras.layers.Conv2D(filter_count, kernel_size=3, activation='relu'))
                 self._qnet.add(tf.keras.layers.MaxPool2D())
+                self._qnet.add(tf.keras.layers.BatchNormalization())
 
             self._qnet.add(tf.keras.layers.Flatten())
 
