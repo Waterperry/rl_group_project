@@ -189,8 +189,8 @@ def evaluate_agent_on_env(agent: DqnAgent, env: gym.Env, num_eval_episodes=100, 
 
 
 layer_params = (32, 16)
-alpha = 1e-3
-target_update = 20
+alpha = 5e-4
+target_update = 75
 batch_size = 128
 
 
@@ -297,15 +297,15 @@ def cartpole_baseline(num_episodes=150, render=False, verbose=False):
 
 
 if __name__ == '__main__':
-    num_eps = 150
-    num_runs = 10
+    num_eps = 100
+    num_runs = 25
     baselines = np.zeros((num_runs, num_eps))
     ours = np.zeros((num_runs, num_eps))
     for i in range(num_runs):
         print(f"Start run {i}")
-        baseline_rewards = cartpole_baseline(num_episodes=150, verbose=False)
+        baseline_rewards = cartpole_baseline(num_episodes=num_eps, verbose=False)
         baselines[i] = baseline_rewards
-        _, our_rewards = cartpole_test(num_episodes=150, render=False, verbose=False)
+        _, our_rewards = cartpole_test(num_episodes=num_eps, render=False, verbose=False)
         ours[i] = our_rewards
 
     baseline_rewards = np.mean(baselines, axis=0)
