@@ -25,7 +25,7 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
     if len(state) == 2 and type(state) == tuple:
         state = state[0]
     # create our DQN agent, passing it information about the environment's observation/action spec.
-    dqn_agent = TargetDqnAgent(state.shape, env.action_space.n, qnet_fc_layer_params=(256, 256, 128),
+    dqn_agent = DqnAgent(state.shape, env.action_space.n, qnet_fc_layer_params=(256, 256, 128),
                                epsilon=0.2, gamma=0.95)
 
     replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=32)
@@ -39,8 +39,8 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
         ep_return = 0.
         state = env.reset()
 
-        done = False
-        while not done:
+        done = truncated = False
+        while not done or truncated:
             # state is a tuple in CarRacing for some reason. just get the pixel-based observation.
             if len(state) == 2 and type(state) == tuple:
                 state = state[0]
@@ -50,7 +50,7 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
             # run the action on the environment and get the new info
             # if you get a ValueError about unpacking values here, swap these lines around.
             # new_state, reward, done, info = env.step(action)
-            new_state, reward, done, _, info = env.step(action)
+            new_state, reward, done, truncated, info = env.step(action)
 
             # TODO: examine a state and see if they're normalized colours outputs or not
             #   if not, we might need to preprocess input to the neural network
@@ -67,7 +67,7 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
                 env.render()
 
             # train on the experience
-            if not done:
+            if not done or truncated:
                 if replay_buffer.mb_size < replay_buffer.num_experiences():
                     training_batch = replay_buffer.sample_minibatch()
                     loss = dqn_agent.train_on_batch(training_batch)
@@ -114,8 +114,8 @@ def run_tdqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
         ep_return = 0.
         state = env.reset()
 
-        done = False
-        while not done:
+        done, truncated = False, False
+        while not (done or truncated):
             # state is a tuple in CarRacing for some reason. just get the pixel-based observation.
             if len(state) == 2 and type(state) == tuple:
                 state = state[0]
@@ -123,7 +123,7 @@ def run_tdqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
             action = dqn_agent.action(state)
 
             # run the action on the environment and get the new info
-            new_state, reward, done, info = env.step(action)
+            new_state, reward, done, truncated, info = env.step(action)
 
             # state is a tuple in CarRacing for some reason. just get the pixel-based observation.
             if len(state) == 2 and type(state) == tuple:
@@ -146,8 +146,11 @@ def run_tdqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
                         print(loss)
 
             ep_return += reward
-
             state = new_state
+
+            # add workaround for weird bug on MacOS where car gets stuck on black tiles...
+            if ep_return < -1000:
+                done = True
 
         # episode terminated by this point
         returns[ep] = ep_return
@@ -327,7 +330,7 @@ if __name__ == '__main__':
     # train an agent on a given environment
     test_env = gym.envs.make('CarRacing-v2', continuous=False, render_mode='human')
 
-    trained_agent, trained_returns = run_dqn_on_env(test_env, num_episodes=1000, render=True)
+    trained_agent, trained_returns = run_tdqn_on_env(test_env, num_episodes=1000, render=True)
     plt.plot(trained_returns)
     plt.show()
 
