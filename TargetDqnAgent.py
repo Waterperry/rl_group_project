@@ -46,9 +46,9 @@ class TargetDqnAgent(DqnAgent):
             self.update_target()
 
         # unpack the experience batch into arrays of state, reward, etc.
-        states = np.array(list(map(lambda x: x.state, batch)))
+        states = np.array(list(map(lambda x: x.state, batch)), dtype=np.float32)
         rewards = np.array(list(map(lambda x: x.reward, batch)))
-        s_primes = np.array(list(map(lambda x: x.next_state, batch)))
+        s_primes = np.array(list(map(lambda x: x.next_state, batch)), dtype=np.float32)
 
         # convert s_primes to a tensor, run it through our q_network, and get the maximum action value for each s'
         a_primes = self._tnet(convert_to_tensor(s_primes))

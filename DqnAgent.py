@@ -33,6 +33,8 @@ class DqnAgent:
 
         # if we need to use convolutional layers, add them and pooling layers after.
         if qnet_conv_layer_params is not None:
+            # rescale the pixel values to be between 0 and 1.
+            self._qnet.add(tf.keras.layers.Rescaling(1./255.))
             for filter_count in qnet_conv_layer_params:
                 self._qnet.add(tf.keras.layers.Conv2D(filter_count, kernel_size=3, activation='relu'))
                 self._qnet.add(tf.keras.layers.MaxPool2D())
