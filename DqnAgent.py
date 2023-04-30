@@ -36,7 +36,7 @@ class DqnAgent:
             # rescale the pixel values to be between 0 and 1.
             self._qnet.add(tf.keras.layers.Rescaling(1./255.))
             for filter_count in qnet_conv_layer_params:
-                self._qnet.add(tf.keras.layers.Conv2D(filter_count, kernel_size=3, activation='relu'))
+                self._qnet.add(tf.keras.layers.Conv2D(filter_count, 2, 2, activation='relu'))
                 self._qnet.add(tf.keras.layers.MaxPool2D())
                 self._qnet.add(tf.keras.layers.BatchNormalization())
 
