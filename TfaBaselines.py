@@ -1,3 +1,5 @@
+from keras.layers import Lambda
+from utils import tf_distance_preprocess
 from keras.optimizers import Adam
 from pygame.event import get as pygame_event_get
 from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
@@ -77,8 +79,8 @@ def final_dqn_baseline(num_episodes=100, target_update_period=25, target_update_
     tf_env = TFPyEnvironment(wrap_env(py_env))
 
     # create the q-network and target-dqn agent
-    q_net = QNetwork(tf_env.observation_spec(), tf_env.action_spec(), preprocessing_layers=Rescaling(1. / 255.),
-                     conv_layer_params=((32, 2, 2), (64, 2, 2), (128, 2, 2)), fc_layer_params=(256, 256, 128))
+    q_net = QNetwork(tf_env.observation_spec(), tf_env.action_spec(),
+                     preprocessing_layers=Lambda(tf_distance_preprocess), fc_layer_params=(64, 64))
     t_dqn = DdqnAgent(tf_env.time_step_spec(), tf_env.action_spec(), q_net, optimizer=Adam(),
                       epsilon_greedy=0.1, target_update_period=target_update_period, target_update_tau=target_update_tau,
                       td_errors_loss_fn=element_wise_squared_loss, n_step_update=n_steps)

@@ -20,7 +20,7 @@ class TargetDqnAgent(DqnAgent):
                  epsilon=0.1,  # random move probability
                  gamma=0.99,  # discount factor
                  qnet_fc_layer_params=(128, 64),  # neuron counts for the fully-connected layers of the Q Network
-                 qnet_conv_layer_params=(32, 64, 128),  # filter counts for convolutional layers of the Q network
+                 qnet_conv_layer_params=((32, 2, 2), (64, 2, 2), (128, 2, 2)),  # convolutional layers of the Q network
                  rng_seed: int = None,  # seed to RNG (optional, for debugging really)
                  debug: bool = False  # enable debugging mode, useful for stack traces in tensorflow functions
                  ):

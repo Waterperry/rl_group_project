@@ -1,8 +1,10 @@
 import os
 import tensorflow as tf
 import numpy as np
+from keras.layers import Lambda
 from keras.losses import Huber
 from keras.optimizers.legacy.adam import Adam
+from utils import tf_distance_preprocess
 from UniformReplayBuffer import Experience
 
 
@@ -15,6 +17,7 @@ class DqnAgent:
                  gamma=0.99,  # discount factor
                  qnet_fc_layer_params=(128, 64),  # neuron counts for the fully-connected layers of the Q Network
                  qnet_conv_layer_params=(32, 64, 128),  # filter counts for convolutional layers of the Q network
+                 preprocessing_layer=False,     # whether to add an image preprocessing layer
                  rng_seed: int = None,  # seed to RNG (optional, for debugging really)
                  debug: bool = False  # enable debugging mode, useful for stack traces in tensorflow functions
                  ):
@@ -32,14 +35,18 @@ class DqnAgent:
         self._qnet.add(tf.keras.layers.InputLayer(input_shape=obs_shape))
 
         # if we need to use convolutional layers, add them and pooling layers after.
-        if qnet_conv_layer_params is not None:
+        if preprocessing_layer:
             # rescale the pixel values to be between 0 and 1.
-            self._qnet.add(tf.keras.layers.Rescaling(1./255.))
-            for filter_count in qnet_conv_layer_params:
-                self._qnet.add(tf.keras.layers.Conv2D(filter_count, 2, 2, activation='relu'))
+            self._qnet.add(Lambda(tf_distance_preprocess))
+        if qnet_conv_layer_params is not None:
+            for params in qnet_conv_layer_params:
+                try:
+                    filter_count, kernel_size, stride = params
+                except ValueError:
+                    raise ValueError("Incorrectly formatted convolutional layer params. (filters, kernel_size, stride)")
+                self._qnet.add(tf.keras.layers.Conv2D(filter_count, kernel_size, stride, activation='relu'))
                 self._qnet.add(tf.keras.layers.MaxPool2D())
-                self._qnet.add(tf.keras.layers.BatchNormalization())
-
+                # self._qnet.add(tf.keras.layers.BatchNormalization())
             self._qnet.add(tf.keras.layers.Flatten())
 
         # add the fully-connected layers to the neural network.

@@ -2,14 +2,17 @@ import gym
 import numpy as np
 import pygame
 import tf_agents.networks.q_network
-from keras.optimizers import Adam
 
-from tf_agents.agents.dqn import dqn_agent
+from keras.optimizers import Adam
+from utils import distance_preprocess
+
+from tf_agents.agents.dqn import dqn_agent as tf_dqn_agent
 from tf_agents.drivers.dynamic_step_driver import DynamicStepDriver
 from tf_agents.environments import suite_gym, tf_py_environment
 from tf_agents.metrics.tf_metrics import AverageReturnMetric
 from tf_agents.replay_buffers.tf_uniform_replay_buffer import TFUniformReplayBuffer
 
+from SoftTargetDqn import SoftTargetDqnAgent
 from TargetDqnAgent import TargetDqnAgent
 from gym.spaces import Discrete
 from matplotlib import pyplot as plt
@@ -24,9 +27,10 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
     state = env.reset()
     if len(state) == 2 and type(state) == tuple:
         state = state[0]
+
     # create our DQN agent, passing it information about the environment's observation/action spec.
     dqn_agent = DqnAgent(state.shape, env.action_space.n, qnet_fc_layer_params=(256, 256, 128),
-                               epsilon=0.2, gamma=0.95)
+                         epsilon=0.2, gamma=0.95)
 
     replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=32)
 
@@ -51,9 +55,6 @@ def run_dqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
             # if you get a ValueError about unpacking values here, swap these lines around.
             # new_state, reward, done, info = env.step(action)
             new_state, reward, done, truncated, info = env.step(action)
-
-            # TODO: examine a state and see if they're normalized colours outputs or not
-            #   if not, we might need to preprocess input to the neural network
 
             # state is a tuple in CarRacing for some reason. just get the pixel-based observation.
             if len(state) == 2 and type(state) == tuple:
@@ -99,9 +100,11 @@ def run_tdqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
     state = env.reset()
     if len(state) == 2 and type(state) == tuple:
         state = state[0]
+        state = distance_preprocess(state)
+
     # create our DQN agent, passing it information about the environment's observation/action spec.
-    dqn_agent = TargetDqnAgent(state.shape, env.action_space.n, target_update_period=25,
-                               qnet_fc_layer_params=(256, 256, 128), epsilon=0.2, gamma=0.95)
+    dqn_agent = TargetDqnAgent(state.shape, env.action_space.n, target_update_period=25, qnet_conv_layer_params=None,
+                               qnet_fc_layer_params=(64, 64), epsilon=0.2, gamma=0.95)
 
     replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=32)
 
@@ -119,7 +122,8 @@ def run_tdqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
             # state is a tuple in CarRacing for some reason. just get the pixel-based observation.
             if len(state) == 2 and type(state) == tuple:
                 state = state[0]
-                # call the action wrapper to get an e-greedy action
+                state = distance_preprocess(state)
+
             action = dqn_agent.action(state)
 
             # run the action on the environment and get the new info
@@ -128,6 +132,8 @@ def run_tdqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
             # state is a tuple in CarRacing for some reason. just get the pixel-based observation.
             if len(state) == 2 and type(state) == tuple:
                 new_state = new_state[0]
+
+            new_state = distance_preprocess(new_state)
             # add the experience to our replay buffer
             experience = Experience(state, done, action, reward, new_state)
             replay_buffer.add_experience(experience)
@@ -147,10 +153,6 @@ def run_tdqn_on_env(env: gym.Env, num_episodes=150, render=True, verbose=False):
 
             ep_return += reward
             state = new_state
-
-            # add workaround for weird bug on MacOS where car gets stuck on black tiles...
-            if ep_return < -1000:
-                done = True
 
         # episode terminated by this point
         returns[ep] = ep_return
@@ -182,11 +184,11 @@ def evaluate_agent_on_env(agent: DqnAgent, env: gym.Env, num_eval_episodes=100, 
             action = agent.action(state)
 
             # run the action on the environment and get the new info
-            new_state, reward, done, info = env.step(action)
+            new_state, reward, done, truncated, info = env.step(action)
 
             # render the environment
             if render:
-                env.render('human')
+                env.render()
 
             ep_return += reward
             state = new_state
@@ -198,9 +200,10 @@ def evaluate_agent_on_env(agent: DqnAgent, env: gym.Env, num_eval_episodes=100, 
     return eval_returns
 
 
-dqn_cartpole_layer_params = (32, 16)
-dqn_cartpole_alpha = 5e-4
-dqn_cartpole_target_update_period = 75
+dqn_cartpole_layer_params = (32, 32)
+dqn_cartpole_alpha = 1e-4
+dqn_cartpole_target_update_tau = 0.1
+dqn_cartpole_target_update_period = 15
 dqn_cartpole_batch_size = 128
 
 
@@ -213,11 +216,11 @@ def cartpole_test(num_episodes=150, render=True, verbose=False):
         state = state[0]
 
     # create our DQN agent, passing it information about the environment's observation/action spec.
-    dqn_agent = TargetDqnAgent(state.shape, env.action_space.n, qnet_conv_layer_params=None,
-                               target_update_period=dqn_cartpole_target_update_period,
-                               alpha=dqn_cartpole_alpha, qnet_fc_layer_params=dqn_cartpole_layer_params, epsilon=0.)
+    dqn_agent = SoftTargetDqnAgent(state.shape, env.action_space.n, qnet_conv_layer_params=None,
+                                   target_update_period=dqn_cartpole_target_update_period,
+                                   alpha=dqn_cartpole_alpha, qnet_fc_layer_params=dqn_cartpole_layer_params, epsilon=0.)
 
-    replay_buffer = UniformReplayBuffer(max_length=10000, minibatch_size=dqn_cartpole_batch_size)
+    replay_buffer = UniformReplayBuffer(max_length=20000, minibatch_size=dqn_cartpole_batch_size)
 
     if render:
         print("[WARN]: Rendering will slow down training. Are you sure you want to be rendering?")
@@ -236,7 +239,7 @@ def cartpole_test(num_episodes=150, render=True, verbose=False):
             action = dqn_agent.action(state)
 
             # run the action on the environment and get the new info
-            new_state, reward, done, info = env.step(action)
+            new_state, reward, done, truncated, info = env.step(action)
 
             # state is a tuple in CarRacing for some reason. just get the pixel-based observation.
             if len(state) == 2 and type(state) == tuple:
@@ -273,18 +276,23 @@ def cartpole_test(num_episodes=150, render=True, verbose=False):
     return dqn_agent, returns
 
 
-def cartpole_baseline(num_episodes=150, render=False, verbose=False):
-    py_env = suite_gym.load('CartPole-v1')
-    tf_env = tf_py_environment.TFPyEnvironment(py_env)
+def cartpole_tddqn_nstep_baseline(num_episodes=150, render=False, verbose=False):
+    n_steps = 15
+    if render:
+        py_env = gym.envs.make('CartPole-v1', render_mode='human')
+    else:
+        py_env = gym.envs.make('CartPole-v1')
+    tf_env = tf_py_environment.TFPyEnvironment(suite_gym.wrap_env(py_env))
 
     q_network = tf_agents.networks.q_network.QNetwork(
         tf_env.observation_spec(), tf_env.action_spec(), fc_layer_params=dqn_cartpole_layer_params)
-    agent = dqn_agent.DqnAgent(tf_env.time_step_spec(), tf_env.action_spec(), q_network, Adam(learning_rate=dqn_cartpole_alpha),
-                               target_update_period=dqn_cartpole_target_update_period, epsilon_greedy=0.)
+    agent = tf_dqn_agent.DdqnAgent(tf_env.time_step_spec(), tf_env.action_spec(), q_network,
+                                   Adam(learning_rate=dqn_cartpole_alpha), target_update_tau=0.5, n_step_update=n_steps,
+                                   target_update_period=dqn_cartpole_target_update_period, epsilon_greedy=0.)
 
     reward = AverageReturnMetric()
-    rb = TFUniformReplayBuffer(agent.collect_data_spec, 1, max_length=10000)
-    rb_iter = iter(rb.as_dataset(dqn_cartpole_batch_size, 2))
+    rb = TFUniformReplayBuffer(agent.collect_data_spec, 1, max_length=20000)
+    rb_iter = iter(rb.as_dataset(dqn_cartpole_batch_size, num_steps=n_steps+1))
     driver = DynamicStepDriver(tf_env, agent.policy, [reward, rb.add_batch])
 
     rewards = np.zeros(num_episodes)
@@ -294,9 +302,158 @@ def cartpole_baseline(num_episodes=150, render=False, verbose=False):
         while not step.is_last():
             step, _ = driver.run(step)
             if render:
-                tf_env.render('human')
+                tf_env.render(mode='human')
                 pygame.event.get()
-            if ep > 0:
+            if rb.num_frames() > dqn_cartpole_batch_size:
+                agent.train(next(rb_iter)[0])
+
+        rewards[ep] = reward.result()
+        if verbose:
+            print(f"{ep}, {reward.result().numpy()}")
+        reward.reset()
+    return rewards
+
+
+def cartpole_tddqn_baseline(num_episodes=150, render=False, verbose=False):
+    if render:
+        py_env = gym.envs.make('CartPole-v1', render_mode='human')
+    else:
+        py_env = gym.envs.make('CartPole-v1')
+    tf_env = tf_py_environment.TFPyEnvironment(suite_gym.wrap_env(py_env))
+
+    q_network = tf_agents.networks.q_network.QNetwork(
+        tf_env.observation_spec(), tf_env.action_spec(), fc_layer_params=dqn_cartpole_layer_params)
+    agent = tf_dqn_agent.DdqnAgent(tf_env.time_step_spec(), tf_env.action_spec(), q_network,
+                                   Adam(learning_rate=dqn_cartpole_alpha), target_update_tau=0.5,
+                                   target_update_period=dqn_cartpole_target_update_period, epsilon_greedy=0.)
+
+    reward = AverageReturnMetric()
+    rb = TFUniformReplayBuffer(agent.collect_data_spec, 1, max_length=20000)
+    rb_iter = iter(rb.as_dataset(dqn_cartpole_batch_size, num_steps=2))
+    driver = DynamicStepDriver(tf_env, agent.policy, [reward, rb.add_batch])
+
+    rewards = np.zeros(num_episodes)
+    for ep in range(num_episodes):
+        step = tf_env.reset()
+
+        while not step.is_last():
+            step, _ = driver.run(step)
+            if render:
+                tf_env.render(mode='human')
+                pygame.event.get()
+            if rb.num_frames() > dqn_cartpole_batch_size:
+                agent.train(next(rb_iter)[0])
+
+        rewards[ep] = reward.result()
+        if verbose:
+            print(f"{ep}, {reward.result().numpy()}")
+        reward.reset()
+    return rewards
+
+
+def cartpole_ddqn_baseline(num_episodes=150, render=False, verbose=False):
+    if render:
+        py_env = gym.envs.make('CartPole-v1', render_mode='human')
+    else:
+        py_env = gym.envs.make('CartPole-v1')
+    tf_env = tf_py_environment.TFPyEnvironment(suite_gym.wrap_env(py_env))
+
+    q_network = tf_agents.networks.q_network.QNetwork(
+        tf_env.observation_spec(), tf_env.action_spec(), fc_layer_params=dqn_cartpole_layer_params)
+    agent = tf_dqn_agent.DdqnAgent(tf_env.time_step_spec(), tf_env.action_spec(), q_network,
+                                   Adam(learning_rate=dqn_cartpole_alpha), epsilon_greedy=0.)
+
+    reward = AverageReturnMetric()
+    rb = TFUniformReplayBuffer(agent.collect_data_spec, 1, max_length=20000)
+    rb_iter = iter(rb.as_dataset(dqn_cartpole_batch_size, num_steps=2))
+    driver = DynamicStepDriver(tf_env, agent.policy, [reward, rb.add_batch])
+
+    rewards = np.zeros(num_episodes)
+    for ep in range(num_episodes):
+        step = tf_env.reset()
+
+        while not step.is_last():
+            step, _ = driver.run(step)
+            if render:
+                tf_env.render(mode='human')
+                pygame.event.get()
+            if rb.num_frames() > dqn_cartpole_batch_size:
+                agent.train(next(rb_iter)[0])
+
+        rewards[ep] = reward.result()
+        if verbose:
+            print(f"{ep}, {reward.result().numpy()}")
+        reward.reset()
+    return rewards
+
+
+def cartpole_baseline(num_episodes=150, render=False, verbose=False):
+    if render:
+        py_env = gym.envs.make('CartPole-v1', render_mode='human')
+    else:
+        py_env = gym.envs.make('CartPole-v1')
+    tf_env = tf_py_environment.TFPyEnvironment(suite_gym.wrap_env(py_env))
+
+    q_network = tf_agents.networks.q_network.QNetwork(
+        tf_env.observation_spec(), tf_env.action_spec(), fc_layer_params=dqn_cartpole_layer_params)
+    agent = tf_dqn_agent.DqnAgent(tf_env.time_step_spec(), tf_env.action_spec(), q_network,
+                                  target_update_tau=dqn_cartpole_target_update_tau,
+                                  target_update_period=dqn_cartpole_target_update_period,
+                                  optimizer=Adam(learning_rate=dqn_cartpole_alpha), epsilon_greedy=0.)
+
+    reward = AverageReturnMetric()
+    rb = TFUniformReplayBuffer(agent.collect_data_spec, 1, max_length=20000)
+    rb_iter = iter(rb.as_dataset(dqn_cartpole_batch_size, num_steps=2))
+    driver = DynamicStepDriver(tf_env, agent.policy, [reward, rb.add_batch])
+
+    rewards = np.zeros(num_episodes)
+    for ep in range(num_episodes):
+        step = tf_env.reset()
+
+        while not step.is_last():
+            step, _ = driver.run(step)
+            if render:
+                tf_env.render(mode='human')
+                pygame.event.get()
+            if rb.num_frames() > dqn_cartpole_batch_size:
+                agent.train(next(rb_iter)[0])
+
+        rewards[ep] = reward.result()
+        if verbose:
+            print(f"{ep}, {reward.result().numpy()}")
+        reward.reset()
+    return rewards
+
+
+def cartpole_tdqn_baseline(num_episodes=150, render=False, verbose=False):
+    if render:
+        py_env = gym.envs.make('CartPole-v1', render_mode='human')
+    else:
+        py_env = gym.envs.make('CartPole-v1')
+    tf_env = tf_py_environment.TFPyEnvironment(suite_gym.wrap_env(py_env))
+
+    q_network = tf_agents.networks.q_network.QNetwork(
+        tf_env.observation_spec(), tf_env.action_spec(), fc_layer_params=dqn_cartpole_layer_params)
+    agent = tf_dqn_agent.DqnAgent(tf_env.time_step_spec(), tf_env.action_spec(), q_network,
+                                  Adam(learning_rate=dqn_cartpole_alpha),
+                                  target_update_tau=dqn_cartpole_target_update_tau,
+                                  target_update_period=dqn_cartpole_target_update_period, epsilon_greedy=0.)
+
+    reward = AverageReturnMetric()
+    rb = TFUniformReplayBuffer(agent.collect_data_spec, 1, max_length=20000)
+    rb_iter = iter(rb.as_dataset(dqn_cartpole_batch_size, num_steps=2))
+    driver = DynamicStepDriver(tf_env, agent.policy, [reward, rb.add_batch])
+
+    rewards = np.zeros(num_episodes)
+    for ep in range(num_episodes):
+        step = tf_env.reset()
+
+        while not step.is_last():
+            step, _ = driver.run(step)
+            if render:
+                tf_env.render(mode='human')
+                pygame.event.get()
+            if rb.num_frames() > dqn_cartpole_batch_size:
                 agent.train(next(rb_iter)[0])
 
         rewards[ep] = reward.result()
@@ -327,12 +484,34 @@ def cartpole_evaluate_versus_baseline(num_eps=100, num_runs=25) -> (np.ndarray, 
 
 
 if __name__ == '__main__':
-    # train an agent on a given environment
-    test_env = gym.envs.make('CarRacing-v2', continuous=False, render_mode='human')
+    # n_eps = 300
+    # raw_rewards = cartpole_baseline(n_eps)
+    # tgt_rewards = cartpole_tdqn_baseline(n_eps)
+    # ddqn_rewards = cartpole_ddqn_baseline(n_eps)
+    # tddqn_rewards = cartpole_tddqn_baseline(n_eps, verbose=True)
+    # ddqn_nstep_rewards = cartpole_tddqn_nstep_baseline(n_eps)
 
-    trained_agent, trained_returns = run_tdqn_on_env(test_env, num_episodes=1000, render=True)
-    plt.plot(trained_returns)
-    plt.show()
+    # for idx in range(raw_rewards.shape[0]):
+    #     print(f'{raw_rewards[idx]}, {tgt_rewards[idx]}, {ddqn_rewards[idx]}, {tddqn_rewards[idx]}')
+
+    # plt.plot(raw_rewards, label='Vanilla DQN')
+    # plt.plot(tgt_rewards, label='Target DQN')
+    # plt.plot(ddqn_rewards, label='Vanilla DDQN')
+    # plt.plot(tddqn_rewards, label='Target DDQN')
+    # plt.ylim(0, 100)
+    # plt.plot(ddqn_nstep_rewards, label='N-step DDQN')
+    # plt.legend()
+    # plt.show()
+
+    cartpole_evaluate_versus_baseline(num_runs=5)
+    # exit(0)
+
+    # train an agent on a given environment
+    # test_env = gym.envs.make('CarRacing-v2', continuous=False, render_mode='human')
+    #
+    # trained_agent, trained_returns = run_tdqn_on_env(test_env, num_episodes=1000, render=True)
+    # plt.plot(trained_returns)
+    # plt.show()
 
     # evaluate the agent on the same environment
     # eval_returns = evaluate_agent_on_env(trained_agent, test_env, num_eval_episodes=250, render=False)
@@ -341,4 +520,3 @@ if __name__ == '__main__':
     # plt.show()
 
     # trained_agent.save_policy()
-
