@@ -1,3 +1,5 @@
+__author__ = 'tb791'
+
 import gym
 import numpy as np
 import pygame

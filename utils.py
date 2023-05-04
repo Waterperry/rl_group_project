@@ -1,3 +1,5 @@
+__author__ = 'tb791'
+
 import numpy as np
 from tensorflow import Tensor
 import tensorflow as tf

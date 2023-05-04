@@ -1,3 +1,4 @@
+__author__ = 'tb791'
 from copy import deepcopy
 
 from keras.losses import Huber

@@ -1,3 +1,5 @@
+__author__ = 'tb791'
+
 import os
 import tensorflow as tf
 import numpy as np
@@ -119,3 +121,6 @@ class DqnAgent:
         for param in params:
             conf.write(f"{param}: {params[param]}\n")
         self._qnet.save(f"./saved_configs/dqn_qnet_{nonce}.h5")
+
+    def get_gamma(self):
+        return self._gamma

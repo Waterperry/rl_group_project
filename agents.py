@@ -9,7 +9,7 @@ from DqnAgent import DqnAgent
 from keras.losses import Huber
 from keras.optimizers.legacy.adam import Adam
 
-#Experience, but with added varable for n_step_rewards
+# Experience, but with added variable for n_step_rewards
 class Experience:
     
     def __init__(self, s, done, a, reward, s_p, n_step_rewards=None):
@@ -102,7 +102,7 @@ class DoubleDqnAgent(DqnAgent):
 
         # create a mask to apply to the max_q_prime array, because we don't want to consider the max_q value of the
         #   next state if our state s is terminal
-        mask = np.array(list(map(lambda x: x.is_terminal(), batch)), dtype=np.float32)
+        mask = np.array(list(map(lambda x: not x.is_terminal(), batch)), dtype=np.float32)
         
         y_true = rewards + mask * self._gamma * q_prime
 
@@ -196,7 +196,7 @@ class NStepDdqnAgent(DoubleDqnAgent):
 
         # create a mask to apply to the max_q_prime array, because we don't want to consider the max_q value of the
         #   next state if our state s is terminal
-        mask = np.array(list(map(lambda x: x.is_terminal(), batch)), dtype=np.float32)
+        mask = np.array(list(map(lambda x: not x.is_terminal(), batch)), dtype=np.float32)
         
         # Calculate decayed sum of n-step rewards
         n_step_rewards = np.array([sum((self._gamma**i) * r for i, r in enumerate(rewards))

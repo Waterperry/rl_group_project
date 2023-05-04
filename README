@@ -1,0 +1,26 @@
+To run our final agent experiment:
+    - python3 FinalAgent.py
+
+To run the DDPG/TF-Agents baselines:
+    - python3 TfaBaselines.py
+
+To play the game with human controls:
+    - python3 HumanController.py
+    - Controls:
+        - w/a/s/d: forward/left/brake/right
+        - [space]: do nothing (advance frame)
+
+
+Different Agent Variants:
+    - agents.py: Older versions of DDQN agent and N-Step (D)DQN agents
+    - DoubleDqnAgent.py: Newest version of our DoubleDQN Agent
+    - DqnAgent.py: Our base DQN agent without target network
+    - FinalAgent.py: Functions which run the training loops used for results in the report
+    - HumanController.py: Human Controls, used to generate the human results in the report
+    - main.py: Old training loops used mainly for the CartPole initial development
+    - PERbuffer.py: The prioritized replay buffer code
+    - SoftTargetDqn.py: Soft Target Update DQN Agent
+    - TargetDqnAgent.py: Hard Target Update DQN Agent
+    - TfaBaselines.py: Code for generating the baselines (TF-Agents DDPG/SAC)
+    - UniformReplayBuffer.py: Defines the Experience type and the Uniform Replay Buffer
+    - utils.py: Contains variants of the preprocessing function we used to transform states

@@ -9,7 +9,6 @@ class SoftTargetDqnAgent(TargetDqnAgent):
                  num_actions,  # number of actions in the environment
                  target_update_tau=0.5,
                  target_update_period=25,  # number of train steps to update target network after
-
                  alpha=1e-3,  # AdaM learning rate
                  epsilon=0.1,  # random move probability
                  gamma=0.99,  # discount factor
@@ -23,6 +22,8 @@ class SoftTargetDqnAgent(TargetDqnAgent):
                          rng_seed=rng_seed, debug=debug)
 
         self._target_update_tau = target_update_tau
+        self._target_update_period = target_update_period
+        self._target_update_counter = 0
 
     def update_target(self):
         qnet_weights = self._qnet.get_weights()

@@ -1,5 +1,6 @@
-from collections import deque
+__author__ = 'vv389'
 
+from collections import deque
 import numpy as np
 
 
